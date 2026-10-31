@@ -1,0 +1,6 @@
+{
+  "name": "Kamu İlan & KPSS Taban Puan Takip Platformu",
+  "description": "Kamu kurumlarının personel alım ilanlarını ve geçmiş KPSS taban puanlarını takip eden kişiselleştirilmiş web platformu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

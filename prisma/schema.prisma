@@ -1,0 +1,176 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum EducationLevel {
+  LISE          // Ortaöğretim
+  ONLISANS      // 2 Yıllık Önlisans
+  LISANS        // 4 Yıllık Lisans
+  YUKSEK_LISANS // Yüksek Lisans
+  DOKTORA       // Doktora
+}
+
+enum PositionType {
+  MEMUR          // 657 Sayılı Kanun 4/A Kadrolu Memur
+  SOZLESMELI     // 657 Sayılı Kanun 4/B Sözleşmeli Personel
+  ISCI           // 4857 Sayılı İş Kanunu Sürekli İşçi
+  AKADEMIK       // 2547 Sayılı Kanun (Arş. Gör., Öğr. Gör., Dr. Öğr. Üyesi)
+  ASKERI_EMNIYET // TSK, EGM, Jandarma, Sahil Güvenlik
+}
+
+enum ScoreType {
+  KPSS_P3   // Lisans Genel Yetenek - Genel Kültür
+  KPSS_P93  // Önlisans Genel Yetenek - Genel Kültür
+  KPSS_P94  // Ortaöğretim Genel Yetenek - Genel Kültür
+  KPSS_P1   // A Grubu / Uzman & Müfettiş Yardımcılığı
+  KPSS_P2
+  KPSS_P10  // Öğretmenlik Alan Sınavı
+  KPSS_P121 // Öğretmenlik ÖABT
+  ALES
+  YDS
+  PUANSIZ   // Puan şartı aramayan sürekli işçi veya kurumsal alım
+}
+
+model User {
+  id             String          @id @default(uuid())
+  email          String          @unique
+  name           String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  
+  // Profil & Öğrenim Bilgileri
+  educationLevel EducationLevel?
+  departmentId   String?
+  department     Department?     @relation(fields: [departmentId], references: [id])
+  kpssScores     UserScore[]
+  savedPostings  SavedPosting[]
+
+  @@map("users")
+}
+
+model UserScore {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scoreType ScoreType
+  score     Decimal   @db.Decimal(5, 2) // Örn: 84.75
+  examYear  Int?      // Örn: 2024
+
+  @@unique([userId, scoreType])
+  @@map("user_scores")
+}
+
+model Department {
+  id               String            @id @default(uuid())
+  code             String?           @unique // ÖSYM veya YÖK Bölüm Kodu (Örn: 3245)
+  name             String            // Örn: "Bilgisayar Mühendisliği"
+  educationLevel   EducationLevel
+  users            User[]
+  qualifications   Qualification[]   // Bu bölümün dahil olduğu nitelik kodları
+  historicalScores HistoricalScore[]
+
+  @@index([name])
+  @@index([educationLevel])
+  @@map("departments")
+}
+
+model Qualification {
+  id          String        @id @default(uuid())
+  code        String        @unique // Örn: "4531" (Bilgisayar Müh.), "4001" (Herhangi Lisans)
+  title       String        // Örn: "Bilgisayar Mühendisliği Lisans Programından Mezun Olmak"
+  description String?
+  departments Department[]  // Bölüm ilişkisi
+  postings    Posting[]     // Bu şartı arayan ilanlar
+
+  @@map("qualifications")
+}
+
+model Posting {
+  id                String            @id @default(uuid())
+  sourceId          String?           // Kaynak sistemdeki benzersiz ilan numarası
+  sourceUrl         String            // kamuilan.sbb.gov.tr veya kariyerkapisi.gov.tr orijinal linki
+  sourcePlatform    String            // "SBB_KAMU_ILAN", "KARIYER_KAPISI", "ISKUR", "RESMI_GAZETE"
+  
+  institutionName   String            // Örn: "T.C. Ulaştırma ve Altyapı Bakanlığı"
+  institutionType   String?           // "Bakanlık", "Üniversite", "Belediye", "KİT", "Bağımsız Kurul"
+  title             String            // Örn: "Mühendis (Yazılım) Alımı"
+  positionType      PositionType      @default(SOZLESMELI)
+  
+  city              String?           // "Ankara", "İstanbul", "Tüm İller"
+  totalQuota        Int               @default(1)
+  
+  // KPSS Şartları
+  requiredScoreType ScoreType?        @default(KPSS_P3)
+  minScore          Decimal?          @db.Decimal(5, 2) // Örn: 70.00
+  educationLevel    EducationLevel
+  
+  // Başvuru Takvimi
+  publishDate       DateTime
+  deadlineDate      DateTime
+  isActive          Boolean           @default(true)
+  
+  // İlan Metni ve Şartlar
+  summary           String?           @db.Text
+  requirementsText  String?           @db.Text
+  applicationMethod String?           // "Kariyer Kapısı Çevrim İçi", "Şahsen", "Posta"
+  rawMetadata       Json?             // Orijinal ilanın ek parametreleri
+  
+  // İlişkiler
+  qualifications    Qualification[]
+  savedByUsers      SavedPosting[]
+  historicalScores  HistoricalScore[]
+
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([institutionName])
+  @@index([deadlineDate])
+  @@index([educationLevel, minScore])
+  @@index([isActive])
+  @@map("postings")
+}
+
+model HistoricalScore {
+  id                String       @id @default(uuid())
+  year              Int          // Örn: 2024
+  term              String       // Örn: "2024/1 KPSS Merkezi Atama" veya "2023 Kurumsal Alım"
+  institutionName   String       // Örn: "Devlet Demiryolları İşletmesi Genel Müdürlüğü"
+  positionTitle     String       // Örn: "Mühendis"
+  city              String?      // Örn: "Ankara"
+  quota             Int          // Kontenjan adedi
+  
+  scoreType         ScoreType    @default(KPSS_P3)
+  minScore          Decimal      @db.Decimal(5, 2) // Taban Puan (Örn: 83.45)
+  maxScore          Decimal?     @db.Decimal(5, 2) // Tavan Puan (Örn: 91.20)
+  
+  departmentId      String?
+  department        Department?  @relation(fields: [departmentId], references: [id])
+  qualificationCode String?      // Örn: "4531"
+  
+  postingId         String?
+  posting           Posting?     @relation(fields: [postingId], references: [id])
+
+  createdAt         DateTime     @default(now())
+
+  @@index([positionTitle, institutionName])
+  @@index([qualificationCode])
+  @@index([year, term])
+  @@map("historical_scores")
+}
+
+model SavedPosting {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postingId String
+  posting   Posting  @relation(fields: [postingId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postingId])
+  @@map("saved_postings")
+}
